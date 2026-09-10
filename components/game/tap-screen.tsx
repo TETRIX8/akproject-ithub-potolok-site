@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { useEffect, useRef } from "react"
 import { Flame, Gauge, ShieldAlert, Timer, Trophy, ChevronRight } from "lucide-react"
 import { Avatar, Badge, Card, Progress } from "@/components/ui/primitives"
 import { formatNumber } from "@/lib/utils"
@@ -14,8 +15,19 @@ import { TRUST_LABELS } from "./trust"
 
 export function TapScreen() {
   const game = useGame()
-  const { state, session, pending } = game
+  const { state, session, pending, refresh } = game
   const cooldownLeft = useCountdown(state?.pausedUntil)
+  const wasPaused = useRef(false)
+
+  // When the countdown reaches zero, pull fresh server state (trust level, verification flag).
+  useEffect(() => {
+    if (cooldownLeft > 0) {
+      wasPaused.current = true
+    } else if (wasPaused.current) {
+      wasPaused.current = false
+      void refresh()
+    }
+  }, [cooldownLeft, refresh])
 
   if (!state) {
     return (

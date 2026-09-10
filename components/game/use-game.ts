@@ -202,7 +202,14 @@ export function useGame() {
             applyServerState({ needsVerification: true, trustLevel: (err.extra.trustLevel as GameState["trustLevel"]) ?? "verification" })
             setChallengeOpen(true)
           } else if (err.code === "COOLDOWN") {
-            applyServerState({ pausedUntil: (err.extra.pausedUntil as string) ?? null, pauseReason: err.message, trustLevel: (err.extra.trustLevel as GameState["trustLevel"]) ?? "cooldown" })
+            const level = (err.extra.trustLevel as GameState["trustLevel"]) ?? "cooldown"
+            applyServerState({
+              pausedUntil: (err.extra.pausedUntil as string) ?? null,
+              pauseReason: err.message,
+              trustLevel: level,
+              // After the pause ends the server will still demand a human check at these levels.
+              needsVerification: level === "verification" || level === "cooldown" || level === "restricted",
+            })
             pushToast({ tone: "warning", title: "Пауза", body: err.message })
           } else if (err.code === "BLOCKED") {
             applyServerState({ trustLevel: "blocked", blockedReason: err.message })
