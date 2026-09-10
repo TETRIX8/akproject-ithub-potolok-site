@@ -1,19 +1,24 @@
 import "server-only"
-import { and, asc, eq, sql } from "drizzle-orm"
+import { and, asc, eq, gt, sql } from "drizzle-orm"
 import type { Tx } from "@/lib/db"
-import { quests, userQuests, users, type Quest, type User } from "@/lib/db/schema"
+import { dailyStats, gameSessions, quests, userQuests, users, type Quest, type User } from "@/lib/db/schema"
 import type { QuestView } from "./types"
 import { ApiError } from "@/lib/api/respond"
 
 /**
- * Quest metrics are pluggable: add a key here + a row in `quests` and the rest of the
- * system (progress sync, UI, claiming) picks it up automatically.
+ * Quest metrics are pluggable: add a key here, a resolver below, and a row in `quests` —
+ * progress sync, UI and claiming pick it up automatically.
  */
 export interface QuestMetrics {
   total_taps: number
   daily_taps: number
+  best_day_taps: number
   streak_days: number
+  active_days: number
+  sessions_count: number
   verifications_passed: number
+  bonus_points: number
+  quests_claimed: number
   best_rank: number | null
   players_count: number
 }
@@ -23,8 +28,13 @@ type MetricResolver = (m: QuestMetrics, quest: Quest) => number
 const RESOLVERS: Record<string, MetricResolver> = {
   total_taps: (m) => m.total_taps,
   daily_taps: (m) => m.daily_taps,
+  best_day_taps: (m) => m.best_day_taps,
   streak_days: (m) => m.streak_days,
+  active_days: (m) => m.active_days,
+  sessions_count: (m) => m.sessions_count,
   verifications_passed: (m) => m.verifications_passed,
+  bonus_points: (m) => m.bonus_points,
+  quests_claimed: (m) => m.quests_claimed,
   // Rank quests: "closeness" to the target rank, capped at target when achieved.
   // Only counts once the leaderboard has more players than the target, otherwise "top-10" is trivial.
   best_rank: (m, q) => {
@@ -34,12 +44,30 @@ const RESOLVERS: Record<string, MetricResolver> = {
   },
 }
 
-export function questMetricsFromUser(user: User, todayTaps: number, playersCount: number): QuestMetrics {
+/** Collects every metric quests can depend on. Runs inside the caller's transaction. */
+export async function collectQuestMetrics(tx: Tx, user: User, todayTaps: number, playersCount: number): Promise<QuestMetrics> {
+  const [[days], [sessions], [claimed]] = await Promise.all([
+    tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(dailyStats)
+      .where(and(eq(dailyStats.userId, user.id), gt(dailyStats.taps, 0))),
+    tx.select({ n: sql<number>`count(*)::int` }).from(gameSessions).where(eq(gameSessions.userId, user.id)),
+    tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(userQuests)
+      .where(and(eq(userQuests.userId, user.id), eq(userQuests.status, "claimed"))),
+  ])
+
   return {
     total_taps: user.totalTaps,
     daily_taps: todayTaps,
+    best_day_taps: Math.max(user.bestDayTaps, todayTaps),
     streak_days: user.streakDays,
+    active_days: days?.n ?? 0,
+    sessions_count: sessions?.n ?? 0,
     verifications_passed: user.verificationsPassed,
+    bonus_points: user.bonusPoints,
+    quests_claimed: claimed?.n ?? 0,
     best_rank: user.bestRank,
     players_count: playersCount,
   }

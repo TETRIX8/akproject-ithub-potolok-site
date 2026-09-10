@@ -10,17 +10,22 @@ import { cn, formatNumber } from "@/lib/utils"
 
 const CATEGORY_LABEL: Record<string, string> = {
   taps: "Тапы",
-  daily: "Ежедневные",
+  daily: "За день",
   streak: "Серия",
   special: "Особые",
   rank: "Рейтинг",
   general: "Общие",
 }
 
+const CATEGORY_ORDER = ["taps", "daily", "streak", "rank", "general", "special"]
+
+type Filter = "all" | "active" | "done" | (typeof CATEGORY_ORDER)[number]
+
 export function QuestsScreen() {
   const { data, mutate } = useSWR<{ ok: true; state: GameState }>("/api/game/state", fetcher)
   const [claiming, setClaiming] = useState<string | null>(null)
   const [justClaimed, setJustClaimed] = useState<string | null>(null)
+  const [filter, setFilter] = useState<Filter>("all")
   const state = data?.state
 
   if (!state) {
@@ -48,6 +53,21 @@ export function QuestsScreen() {
   const order: QuestView["status"][] = ["completed", "in_progress", "available", "claimed"]
   const sorted = [...state.quests].sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status))
   const claimable = state.quests.filter((q) => q.status === "completed").length
+  const categories = CATEGORY_ORDER.filter((c) => state.quests.some((q) => q.category === c))
+
+  const visible = sorted.filter((q) => {
+    if (filter === "all") return true
+    if (filter === "active") return q.status === "completed" || q.status === "in_progress"
+    if (filter === "done") return q.status === "claimed"
+    return q.category === filter
+  })
+
+  const chips: { key: Filter; label: string; count: number }[] = [
+    { key: "all", label: "Все", count: state.quests.length },
+    { key: "active", label: "В процессе", count: state.quests.filter((q) => q.status === "completed" || q.status === "in_progress").length },
+    ...categories.map((c) => ({ key: c as Filter, label: CATEGORY_LABEL[c] ?? c, count: state.quests.filter((q) => q.category === c).length })),
+    { key: "done", label: "Получено", count: state.quests.filter((q) => q.status === "claimed").length },
+  ]
 
   return (
     <div className="flex flex-col gap-4">
@@ -68,8 +88,37 @@ export function QuestsScreen() {
         </div>
       </Card>
 
+      <div role="tablist" aria-label="Фильтр квестов" className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {chips.map((c) => {
+          const active = filter === c.key
+          return (
+            <button
+              key={c.key}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setFilter(c.key)}
+              className={cn(
+                "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors",
+                active ? "border-primary bg-primary text-primary-foreground" : "glass border-transparent text-muted hover:text-foreground",
+              )}
+            >
+              {c.label}
+              <span className={cn("tabular-nums", active ? "opacity-80" : "opacity-60")}>{c.count}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      {visible.length === 0 ? (
+        <Card className="flex flex-col items-center gap-2 py-8 text-center">
+          <Lock className="h-6 w-6 text-muted" />
+          <span className="text-sm text-muted">Здесь пока пусто</span>
+        </Card>
+      ) : null}
+
       <ul className="flex flex-col gap-3">
-        {sorted.map((q) => {
+        {visible.map((q) => {
           const done = q.status === "completed" || q.status === "claimed"
           return (
             <li key={q.id} className={cn("glass animate-pop-in flex flex-col gap-3 rounded-xl p-4 transition-all", q.status === "claimed" && "opacity-60", justClaimed === q.id && "ring-2 ring-success")}>
