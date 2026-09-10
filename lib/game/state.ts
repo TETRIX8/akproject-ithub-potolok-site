@@ -5,7 +5,7 @@ import { dailyStats, users, type User } from "@/lib/db/schema"
 import { GAME_CONFIG, publicGameConfig } from "./config"
 import { trustSnapshot } from "./anticheat"
 import { playersCount, rankOf } from "./leaderboard"
-import { questMetricsFromUser, syncQuests } from "./quests"
+import { collectQuestMetrics, syncQuests } from "./quests"
 import { decideWindows, tapWindowUsage } from "./rate-limit"
 import type { GameState, PublicUser } from "./types"
 
@@ -35,7 +35,7 @@ export async function buildGameState(userId: number): Promise<GameState> {
     }
 
     const players = await playersCount(tx)
-    const { all } = await syncQuests(tx, userId, questMetricsFromUser(user, todayTaps, players))
+    const { all } = await syncQuests(tx, userId, await collectQuestMetrics(tx, user, todayTaps, players))
     const usage = await tapWindowUsage(tx, userId, today)
     const snap = trustSnapshot(user, now)
     const config = publicGameConfig()

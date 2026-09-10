@@ -5,7 +5,7 @@ import { dailyStats, gameSessions, tapEvents, users } from "@/lib/db/schema"
 import { GAME_CONFIG } from "./config"
 import { logAntiCheat, raiseSuspicion, trustSnapshot } from "./anticheat"
 import { playersCount, rankOf } from "./leaderboard"
-import { questMetricsFromUser, syncQuests } from "./quests"
+import { collectQuestMetrics, syncQuests } from "./quests"
 import { decideWindows, tapWindowUsage } from "./rate-limit"
 import { requireActiveSession } from "./session"
 import { todayIso } from "./state"
@@ -187,7 +187,7 @@ export async function processTapBatch(userId: number, req: TapBatchRequest, meta
         await tx.update(users).set({ bestRank: rank }).where(eq(users.id, userId))
         user.bestRank = rank
       }
-      const synced = await syncQuests(tx, userId, questMetricsFromUser(user, day.taps, await playersCount(tx)))
+      const synced = await syncQuests(tx, userId, await collectQuestMetrics(tx, user, day.taps, await playersCount(tx)))
       newlyCompleted = synced.newlyCompleted
     }
 
